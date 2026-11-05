@@ -1,5 +1,13 @@
 # Guides
 
+## Get started
+
+!!! info ""
+
+    Start here: [Get started](./get-started/index.md)
+
+* [Quickstart on CPU](./get-started/quickstart-cpu.md)
+
 ## ML frameworks
 
 !!! info ""
