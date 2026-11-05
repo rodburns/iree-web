@@ -143,6 +143,8 @@ nav:
       - "building-from-source/riscv.md"
   - "Guides":
       - "guides/index.md"
+      - "Get started":
+          - "guides/get-started/quickstart-cpu.md"
       - "ML frameworks":
           - "guides/ml-frameworks/index.md"
           - JAX: "guides/ml-frameworks/jax.md"

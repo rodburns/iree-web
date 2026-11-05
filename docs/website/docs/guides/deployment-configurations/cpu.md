@@ -118,7 +118,9 @@ With the requirements out of the way, we can now compile a model and run it.
 --8<-- "docs/website/docs/guides/deployment-configurations/snippets/_iree-import-onnx-mobilenet.md"
 
 Then run the following command to compile with the `local` device, `llvm-cpu`
-target compilation backend, and recommended optimization flags:
+target compilation backend, and recommended optimization flags. See
+[Choosing CPU targets](#choosing-cpu-targets) for how to select the
+instruction set for your CPU:
 
 ``` shell hl_lines="2-4"
 iree-compile \
@@ -129,18 +131,6 @@ iree-compile \
     --iree-opt-data-tiling \
     mobilenetv2.mlir -o mobilenet_cpu.vmfb
 ```
-
-???+ tip "Tip - Target CPUs and CPU features"
-
-    By default, the compiler will use a generic CPU target which will result in
-    poor performance. A target CPU or target CPU feature set should be selected
-    using one of these options:
-
-    * `--iree-llvmcpu-target-cpu=...`
-    * `--iree-llvmcpu-target-cpu-features=...`
-
-    When not cross compiling, passing `--iree-llvmcpu-target-cpu=host` is
-    usually sufficient on most devices.
 
 --8<-- "docs/website/docs/guides/deployment-configurations/snippets/_iree-optimization-options.md"
 
@@ -154,11 +144,132 @@ iree-compile \
 
 #### Choosing CPU targets
 
-The `--iree-llvmcpu-target-triple` flag tells the compiler to generate code
-for a specific type of CPU. You can see the list of supported targets with
-`iree-compile --iree-llvmcpu-list-targets`, or use the default value of
-"host" to let LLVM infer the triple from your host machine
-(e.g. `x86_64-linux-gnu`).
+Modern CPUs support optional instruction set extensions, such as AVX2 and
+AVX-512 on x86, NEON, SVE and dot-product instructions on Arm, and the vector
+extension on RISC-V. IREE only uses these extensions if you tell the compiler
+that your target CPU supports them.
+
+!!! warning
+
+    If you don't specify a target CPU, the compiler uses a generic CPU for the
+    target architecture. Generic code runs everywhere but leaves out the
+    vector and matrix instructions that make ML workloads fast.
+
+    If you specify instructions that your CPU doesn't support, the program
+    will compile but will crash at runtime with an "illegal instruction" error.
+
+IREE gives you three flags to describe the target CPU:
+
+| Flag | What it selects | Example values |
+| ---- | --------------- | -------------- |
+| `--iree-llvmcpu-target-triple` | The architecture and operating system | `x86_64-linux-gnu`, `aarch64-linux-android34`, `riscv64-linux-gnu` |
+| `--iree-llvmcpu-target-cpu` | A named CPU model, which implies its full set of instructions | `host`, `znver4`, `sapphirerapids`, `x86-64-v3`, `neoverse-v2`, `apple-m1` |
+| `--iree-llvmcpu-target-cpu-features` | Individual instruction set extensions to add or remove | `+avx2,+fma`, `+sve,+i8mm`, `+v` |
+
+Choose the option below that matches your situation.
+
+##### Run on the machine that compiles the program
+
+If you run the compiled program on the same machine that runs
+`iree-compile`, pass `host`:
+
+```shell
+--iree-llvmcpu-target-cpu=host
+```
+
+The compiler detects your CPU model and all of the instruction set extensions
+it supports, and generates code that uses them. This is the right choice for
+most users. The target triple also defaults to your host,
+so you don't need to set it.
+
+##### Run on a different machine of the same architecture
+
+If you compile on one machine and deploy to another, `host` describes the
+wrong CPU. Instead, name the CPU of the machine that runs the program. For
+example, for a server with an AMD Zen 4 CPU:
+
+```shell
+--iree-llvmcpu-target-cpu=znver4
+```
+
+The compiler fills in the instruction set extensions that the named CPU
+supports. This works for x86, AArch64 and RISC-V 64 targets.
+
+To find the name for a CPU, run the following on the deployment machine if
+you have [Clang](https://clang.llvm.org/) or GCC installed:
+
+=== "Clang"
+
+    ```shell
+    clang -march=native -### -c -x c /dev/null 2>&1 | grep -o '"-target-cpu" "[^"]*"'
+    ```
+
+=== "GCC (x86)"
+
+    ```shell
+    gcc -march=native -Q --help=target | grep -- '-march='
+    ```
+
+Some common values are:
+
+| Target | CPU names |
+| ------ | --------- |
+| Intel x86 | `skylake`, `icelake-server`, `sapphirerapids`, `alderlake` |
+| AMD x86 | `znver2`, `znver3`, `znver4`, `znver5` |
+| Arm servers | `neoverse-n1`, `neoverse-v1`, `neoverse-v2` |
+| Apple silicon | `apple-m1`, `apple-m2`, `apple-m3`, `apple-m4` |
+
+!!! tip "Target a family of x86 CPUs"
+
+    To build one program that runs on many x86 machines, use one of the
+    x86-64 microarchitecture levels instead of a specific CPU model:
+
+    | Level | Adds |
+    | ----- | ---- |
+    | `x86-64-v2` | SSE4.2, POPCNT |
+    | `x86-64-v3` | AVX2, FMA, BMI2 (most x86 CPUs since 2015) |
+    | `x86-64-v4` | AVX-512 |
+
+    For example, `--iree-llvmcpu-target-cpu=x86-64-v3` produces code that runs
+    on any CPU with AVX2.
+
+##### Add or remove individual instruction set extensions
+
+Use `--iree-llvmcpu-target-cpu-features` to fine-tune the instruction set.
+List the features separated by commas, with `+` to enable a feature or `-` to
+disable it. Features you list are combined with those implied by
+`--iree-llvmcpu-target-cpu`. For example, to target a Neoverse V1 CPU but
+disable SVE:
+
+```shell
+--iree-llvmcpu-target-cpu=neoverse-v1 \
+--iree-llvmcpu-target-cpu-features=-sve
+```
+
+!!! note
+
+    `host` must be used either for both `--iree-llvmcpu-target-cpu` and
+    `--iree-llvmcpu-target-cpu-features`, or not at all. Combining `host` with
+    an explicit CPU name or feature list is an error.
+
+##### Cross-compile for a different architecture
+
+To compile on one architecture and run on another, for example on an x86
+workstation for an Arm phone, also set `--iree-llvmcpu-target-triple`:
+
+```shell
+iree-compile \
+    --iree-hal-target-device=local \
+    --iree-hal-local-target-device-backends=llvm-cpu \
+    --iree-llvmcpu-target-triple=aarch64-linux-android34 \
+    --iree-llvmcpu-target-cpu=cortex-a715 \
+    --iree-opt-level=O2 \
+    --iree-opt-data-tiling \
+    mobilenetv2.mlir -o mobilenet_android.vmfb
+```
+
+To list the architectures that your copy of `iree-compile` can generate code
+for, run:
 
 ```shell
 iree-compile --iree-llvmcpu-list-targets
@@ -180,6 +291,9 @@ iree-compile --iree-llvmcpu-list-targets
     x86        - 32-bit X86: Pentium-Pro and above
     x86-64     - 64-bit X86: EM64T and AMD64
 ```
+
+See the [bare-metal guide](./bare-metal.md) for
+targets without an operating system.
 
 ### :octicons-terminal-16: Run a compiled program
 

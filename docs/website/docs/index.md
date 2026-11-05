@@ -11,6 +11,13 @@ lowers Machine Learning (ML) models to a unified IR that scales up to meet the
 needs of the datacenter and down to satisfy the constraints and special
 considerations of mobile and edge deployments.
 
+<iframe width="560" height="315"
+  src="https://www.youtube.com/embed/ktNEelCWNGo?si=c7ySKCYSfTePsGqF"
+  title="YouTube video player" frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media;
+    gyroscope; picture-in-picture; web-share"
+  referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
 ## :octicons-sparkles-fill-16: Key features
 
 <div class="grid cards" markdown>
